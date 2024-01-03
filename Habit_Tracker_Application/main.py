@@ -1,12 +1,26 @@
 import requests.auth
 from datetime import datetime
 from dotenv import dotenv_values
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 config = {
     **dotenv_values("../.env.secret")
 }
 
-SHEETY_ENDPOINT = config["SHEETY_ENDPOINT"]
+SCOPE = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
+
+CREDS = ServiceAccountCredentials.from_json_keyfile_name(
+    filename="../Credentials.json",
+    scopes=SCOPE
+)
+
+client = gspread.authorize(CREDS)
+sheets_tracker = client.open("My_Workouts").worksheet("workouts")
+
 NUTRITIONIX_ENDPOINT = "https://trackapi.nutritionix.com/v2/natural/exercise"
 
 X_API_ID = config["API_ID"]
@@ -29,35 +43,36 @@ nutrionix_headers = {
 response_with_nutritionix = requests.post(
     NUTRITIONIX_ENDPOINT,
     json=nutrionix_params,
-    headers=nutrionix_headers)
+    headers=nutrionix_headers
+)
 
 result = response_with_nutritionix.json()
 
 print("Nutritionix : ", result)
 
-header = {
-    "Authorization": config["AUTHORIZATION"]
-}
-
 date_in_string = datetime.now().strftime("%d/%m/%Y")
 time_in_string = datetime.now().strftime("%X")
+
 for workouts in result["exercises"]:
     working_time = str(workouts["duration_min"])
-    SHEETY_data = {
-        "workout": {
-            "date": date_in_string,
-            "time": time_in_string,
-            "exercise": workouts["name"].title(),
-            "duration": working_time,
-            "calories": workouts["nf_calories"]
-        }
+
+    sheets_data = {
+        "date": date_in_string,
+        "time": time_in_string,
+        "exercise": workouts["name"].title(),
+        "duration": working_time,
+        "calories": workouts["nf_calories"]
     }
-    response_with_sheety = requests.post(url=SHEETY_ENDPOINT,
-                                         json=SHEETY_data,
-                                         headers=header,
-                                         auth=(
-                                             config["SHEETY_USERNAME"],
-                                             config["SHEETY_PASSWORD"]
-                                         )
-                                         )
-    print("Sheety response : ",response_with_sheety.text)
+
+    sheets_tracker.append_row(
+        [
+            sheets_data["date"],
+            sheets_data["time"],
+            sheets_data["exercise"],
+            sheets_data["duration"],
+            sheets_data["calories"],
+
+        ]
+    )
+
+    print("Google Sheet : ", sheets_tracker)
